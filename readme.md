@@ -8,14 +8,26 @@ Underlying business questions are: How mail-order company acquire new clients mo
 The project has two major steps: the customer segmentation report and the supervised learning model.
 
 
-## Part 1: Customer Segmentation Report
-In this section I will use unsupervised learning methods to analyze attributes of established customers and the general population in order to create customer segments.
-From the existing customers we will analyze the attributes and matching them with bigger dataset (potential customers) to figure out which are people 
-in Germany most likely new customers.
+Table of contents:
+  - Problem Introduction
+  - Strategy to solve the problem
+  - Metrics
+  - EDA
+  - Modelling
+  - Hyperparameter tuning
+  - Results
+  - Conclusion/Reflection
+  - Improvements
 
-We will follow by data processing steps.
+# Problem Introduction:
+This is the final project of my choice. In this project, I will try to address 2 main questions.
+- Question 1: With an existing customer data set, what data can be potential customers on a larger data set?
+- Question 2: With a data set of people, how many people are likely to be your customers?
 
-### Gathering data:
+# Data Processing:
+Before going into solving the questions, let's see and process the datasets.
+
+## Gathering data:
 
 There are four data files associated with this project:
 
@@ -52,7 +64,7 @@ The "CUSTOMERS" file contains three extra columns ('CUSTOMER_GROUP', 'ONLINE_PUR
 
 As you can see in both of datasets almost columns/fields are categories.
 
-### Clean data
+## Clean data
 
 In the data, we can process clean data by some steps:
 - Remove unused columns/fields: `Unnamed: 0`, `LNR`
@@ -61,10 +73,10 @@ In the data, we can process clean data by some steps:
     - `EINGEZOGENAM_HH_JAHR`: Convert to numbers of years
     - `GEBURTSJAHR`: Convert to numbers of years
 - Represent other categories by one-hot vectors
-- Fill co
+- Fill columns with NA values by mean values
 
-### Visualize data
-#### Visualize one dimension `GEBURTSJAHR`
+## Visualize data
+### Visualize one dimension `GEBURTSJAHR`
 ![GEBURTSJAHR](images/visualize_dist_side_by_side_GEBURTSJAHR.png)
 
 
@@ -96,14 +108,32 @@ As the above charts we can see the are subset of general customer are customers,
 subset is not belonging to customers (the subset only below to yellow colors)
 
 
-### Find potential customers
+## Question 1: Customer Segmentation Report
+In this section I will use unsupervised learning methods to analyze attributes of established customers and the general population in order to create customer segments.
+From the existing customers we will analyze the attributes and matching them with bigger dataset (potential customers) to figure out which are people 
+in Germany most likely new customers.
+
+### Strategy to solve the problems
+To find out which groups of potential customers are similar to the given set of customers, I will divide them into K groups (K = 10 for example) on the potential data set. From these K groups, I will map them on the given set of customers, to find out which groups have the largest number. From there, it will re-map the potential data set to find people who are likely to be their main customers.
+To classify into K groups, I will use K-means (unsupervised learning) algorithm.
+
+### Modelling
+
 To find potential customers we can seperate the general dataset into K clusters. Then apply predict features
 to categorize the customers into these K clusters. After that, we can compute which categories that 
 customers belong to. From this point we can find which subset of general customers then consider for potential customers
 
 - We can choose K = 10 clusters
-- Visualize the categories label on the general dataset:
+```python
+from sklearn.cluster import KMeans
 
+model = KMeans(n_clusters=10)
+Xt_kmeans = model.fit(Xt)
+```
+
+
+- Visualize the categories label on the general dataset:
+After taking some time to train the model, we got the labeled records (0..K-1). We will visualize the data points according to the colors corresponding to the labels
 ![Visualize_categories](images/visualize_categories.png)
 
 
@@ -128,19 +158,54 @@ We predict categories on the customer dataset:
 As you can see there are 3 most groups having biggest values: group with categories `0, 3, 9`
 
 We can find potential customers by these value. I create new function name `get_potential_cus` support for query in `azidas` dataset.
+```python
+def get_potential_cus(_Xt, categories, _df):
+    x_potential = model.predict(_Xt)
+    indies = np.argwhere(np.isin(x_potential, categories)).ravel()
+    return _df.iloc[indies]
+
+get_potential_cus(Xt, [0, 3, 9], azdias)
+
+get_potential_cus(Xt, [3], azdias)
+```
+
+### Results:
+
 There are `7569` records. If we choose only highest group value (`3` in this case), the potential customers having `1879` records
 
 
-## Part 2: Supervised Learning Model
+## Question 2: Predict potential customers
 
 I'll use the previous analysis to build a machine learning model that predicts whether or not each individual will respond to the campaign.
 
+
+### Strategy to solve the problem
 I will use the above pipeline convert the mail out dataset into clean data. Then I use the `RandomForestClassifier` model to predict 
 the `RESPONSE` value is 0 or 1.
 
+### Metrics:
+I will use `precision`, `recall`, `f1-score` to evaluate the performance of models
+
+
+### Modelling
+I will use `RandomForestClassifier` model with default parameters then do the training on current dataset.
+The dataset is seperated into training and test set data (testsize is 20%). 
+```python
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import classification_report
+
+clf = RandomForestClassifier().fit(X_train, y_train)
+y_pred = clf.predict(X_test)
+report = classification_report(y_test,y_pred)
+
+print(report)
+
+```
+
+### Results
+
 - With out sampling data:
-First, I will seperate dataset into training and test set data (testsize is 20%). Then fit into the model.
-The result of this data and model is not very good, especially for the case where predict `RESPONSE` is `.
+The result of this data and model is not very good, especially for the case where predict `RESPONSE` is ` 1.
 ```python
 
               precision    recall  f1-score   support
@@ -157,7 +222,7 @@ weighted avg       0.97      0.99      0.98      8593
 The cause then i think is unbalanced data set problem: there are too many cases with label `RESPONSE` is 0.
 We will find the way to sample on the data make more balance
 
-- With sampling data:
+### Improvements
 I use `RandomOverSampler` from [imbalanced-learned](https://imbalanced-learn.org/stable/references/generated/imblearn.over_sampling.RandomOverSampler.html)
 
 After training, I got the result:
@@ -176,6 +241,20 @@ weighted avg       0.95      0.95      0.95     16972
 Now both precision and recall have more than 90%. 
 
 We apply the trained model to predict on test data.
+```python
+mailout_test = pd.read_csv('./data/mailout_test.csv')
+formated_mailout_test = convert_pipeline.op(mailout_test)
+
+y_test_pred = clf.predict(formated_mailout_test)
+print(f"There are: {len(y_test_pred[y_test_pred == 1])} customers (which response is 1) in {mailout_test.shape[0]} records")
+
+
 ```
 There are: 893 customers (which response is 1) in 42833 records
-```
+
+
+# Conclusion
+We can solve the questions using machine learning techniques:
+- Grouping and comparing groups with customer data sets help us find out which groups are likely to be potential customers.
+- The prediction of target customers by supervised learning technique.
+Besides, the data imbalance also greatly affects the training results.
